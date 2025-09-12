@@ -10,6 +10,14 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 
+# Servo angle limits and descriptions
+BASE_MIN, BASE_CENTER, BASE_MAX = 0, 105, 180
+SHOULDER_MIN, SHOULDER_MAX = 0, 90
+ELBOW_MIN, ELBOW_MAX = 10, 90
+
+# Coordinate offset based on reference position at angles (base: 105°, shoulder: 0°, elbow: 10°)
+REFERENCE_OFFSET = (3.1232, 0, 24.7192)  # Computed via forward kinematics (L1=7, L2=8, L3=10)
+
 def start_controller(angle_queue: multiprocessing.Queue):
     from servo_controller import RobustSerialServoController, get_default_port, select_serial_port
     default_port = get_default_port()
@@ -22,7 +30,7 @@ def start_controller(angle_queue: multiprocessing.Queue):
     import time
     try:
         while True:
-            time.sleep(0.5)  # Keep alive
+            time.sleep(0.5)
     except KeyboardInterrupt:
         logging.info("⏹️ Interrupted by user")
     finally:
@@ -30,20 +38,38 @@ def start_controller(angle_queue: multiprocessing.Queue):
         logging.info("👋 Controller stopped")
 
 def submit_coords():
-    x = float(entry_x.get())
-    y = float(entry_y.get())
-    z = float(entry_z.get())
-    angle_queue.put(("IK", (x, y, z)))  # Signal IK to process
-    result_label.config(text=f"Sent coordinates: {x}, {y}, {z}")
+    try:
+        x = float(entry_x.get())
+        y = float(entry_y.get())
+        z = float(entry_z.get())
+        # Apply coordinate shift: P_ik = P_real - R
+        x_ik = x - REFERENCE_OFFSET[0]
+        y_ik = y - REFERENCE_OFFSET[1]
+        z_ik = z - REFERENCE_OFFSET[2]
+        angle_queue.put(("IK", (x_ik, y_ik, z_ik)))
+        result_label.config(text=f"Sent coordinates: {x_ik:.2f}, {y_ik:.2f}, {z_ik:.2f} (shifted from {x}, {y}, {z})")
+    except Exception as e:
+        result_label.config(text=f"❌ Invalid coordinates: {e}")
 
 def submit_angle():
-    servo_id = int(entry_servo_id.get())
-    angle = float(entry_angle.get())
-    if 1 <= servo_id <= 3 and 0 <= angle <= 180:
-        angle_queue.put((servo_id, angle))
-        result_label.config(text=f"Sent angle: Servo {servo_id} to {angle}°")
-    else:
-        result_label.config(text="❌ Servo ID (1-3) or angle (0-180) out of range")
+    try:
+        servo_id = int(entry_servo_id.get())
+        angle = float(entry_angle.get())
+        if servo_id == 1 and BASE_MIN <= angle <= BASE_MAX:
+            angle_queue.put((servo_id, angle))
+            result_label.config(text=f"Sent: Base to {angle}° (0=right, 105=center, 180=left)")
+        elif servo_id == 2 and SHOULDER_MIN <= angle <= SHOULDER_MAX:
+            angle_queue.put((servo_id, angle))
+            result_label.config(text=f"Sent: Shoulder to {angle}° (0=up, 90=down)")
+        elif servo_id == 3 and ELBOW_MIN <= angle <= ELBOW_MAX:
+            angle_queue.put((servo_id, angle))
+            result_label.config(text=f"Sent: Elbow to {angle}° (90=L, 10=extended)")
+        else:
+            result_label.config(
+                text="❌ Out of range:\nBase:0-180, Shoulder:0-90, Elbow:10-90"
+            )
+    except Exception as e:
+        result_label.config(text=f"❌ Invalid input: {e}")
 
 def on_close():
     root.destroy()
@@ -77,17 +103,21 @@ tk.Button(root, text="Submit Coords", command=submit_coords).grid(row=4, column=
 
 # Angle Input
 tk.Label(root, text="Enter Angle:").grid(row=5, column=0, columnspan=2)
-tk.Label(root, text="Servo ID (1-3):").grid(row=6, column=0)
+tk.Label(root, text="Servo ID (1=Base, 2=Shoulder, 3=Elbow):").grid(row=6, column=0, columnspan=2)
+tk.Label(root, text="Servo ID:").grid(row=7, column=0)
 entry_servo_id = tk.Entry(root)
-entry_servo_id.grid(row=6, column=1)
-tk.Label(root, text="Angle (0-180°):").grid(row=7, column=0)
+entry_servo_id.grid(row=7, column=1)
+tk.Label(root, text="Angle:").grid(row=8, column=0)
 entry_angle = tk.Entry(root)
-entry_angle.grid(row=7, column=1)
-tk.Button(root, text="Submit Angle", command=submit_angle).grid(row=8, column=0, columnspan=2)
+entry_angle.grid(row=8, column=1)
+tk.Label(root, text="Base: 0=right, 105=center, 180=left").grid(row=9, column=0, columnspan=2)
+tk.Label(root, text="Shoulder: 0=up, 90=down").grid(row=10, column=0, columnspan=2)
+tk.Label(root, text="Elbow: 90=L, 10=extended").grid(row=11, column=0, columnspan=2)
+tk.Button(root, text="Submit Angle", command=submit_angle).grid(row=12, column=0, columnspan=2)
 
 # Result Label
 result_label = tk.Label(root, text="Ready")
-result_label.grid(row=9, column=0, columnspan=2)
+result_label.grid(row=13, column=0, columnspan=2)
 
 root.mainloop()
 

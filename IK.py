@@ -1,6 +1,7 @@
 import multiprocessing
 import logging
 import tkinter as tk
+import math
 from servo_controller import start_controller
 from IK import run_ik, angle_queue
 
@@ -15,8 +16,52 @@ BASE_MIN, BASE_CENTER, BASE_MAX = 0, 105, 180
 SHOULDER_MIN, SHOULDER_MAX = 0, 90
 ELBOW_MIN, ELBOW_MAX = 10, 90
 
+# Link lengths (in cm)
+L1, L2, L3 = 7, 8, 10
+
 # Coordinate offset based on reference position at angles (base: 105°, shoulder: 0°, elbow: 10°)
 REFERENCE_OFFSET = (3.1232, 0, 24.7192)  # Computed via forward kinematics (L1=7, L2=8, L3=10)
+
+def calculate_ik_angles(x, y, z):
+    """Calculate IK angles (base, shoulder, elbow) for given coordinates."""
+    try:
+        # Base angle (in degrees)
+        base_angle = math.degrees(math.atan2(y, x))
+        base_angle = BASE_CENTER - base_angle  # Map to code's convention (105° = center)
+        if base_angle < BASE_MIN:
+            base_angle += 360
+        elif base_angle > BASE_MAX:
+            base_angle -= 360
+        if not (BASE_MIN <= base_angle <= BASE_MAX):
+            raise ValueError("Base angle out of range")
+
+        # Project to 2D plane (shoulder-elbow), adjust for L3
+        r = math.sqrt(x**2 + y**2)
+        z_adjusted = z  # Simplified; L3 affects orientation, solved iteratively
+
+        # Cosine law for elbow angle
+        D = (r**2 + z_adjusted**2 - L1**2 - L2**2) / (2 * L1 * L2)
+        if not -1 <= D <= 1:
+            raise ValueError("Position unreachable (cosine law failed)")
+        elbow_angle = math.degrees(math.acos(D))
+        if not (ELBOW_MIN <= elbow_angle <= ELBOW_MAX):
+            # Clamp to nearest valid angle
+            elbow_angle = max(ELBOW_MIN, min(ELBOW_MAX, elbow_angle))
+            logging.warning(f"Elbow angle clamped to {elbow_angle:.2f}°")
+
+        # Shoulder angle
+        gamma = math.atan2(z_adjusted, r)
+        beta = math.atan2(L2 * math.sin(math.radians(elbow_angle)), L1 + L2 * math.cos(math.radians(elbow_angle)))
+        shoulder_angle = math.degrees(gamma - beta)
+        if not (SHOULDER_MIN <= shoulder_angle <= SHOULDER_MAX):
+            # Clamp to nearest valid angle
+            shoulder_angle = max(SHOULDER_MIN, min(SHOULDER_MAX, shoulder_angle))
+            logging.warning(f"Shoulder angle clamped to {shoulder_angle:.2f}°")
+
+        return base_angle, shoulder_angle, elbow_angle
+    except Exception as e:
+        logging.warning(f"IK calculation failed: {e}")
+        return None, None, None  # Indicate unreachable position
 
 def start_controller(angle_queue: multiprocessing.Queue):
     from servo_controller import RobustSerialServoController, get_default_port, select_serial_port
@@ -46,6 +91,13 @@ def submit_coords():
         x_ik = x - REFERENCE_OFFSET[0]
         y_ik = y - REFERENCE_OFFSET[1]
         z_ik = z - REFERENCE_OFFSET[2]
+        # Calculate and print IK angles
+        base, shoulder, elbow = calculate_ik_angles(x_ik, y_ik, z_ik)
+        if base is not None:
+            logging.info(f"Calculated angles for ({x_ik:.2f}, {y_ik:.2f}, {z_ik:.2f}): "
+                        f"Base={base:.2f}°, Shoulder={shoulder:.2f}°, Elbow={elbow:.2f}°")
+        else:
+            logging.info(f"Position ({x_ik:.2f}, {y_ik:.2f}, {z_ik:.2f}) unreachable within angle constraints")
         angle_queue.put(("IK", (x_ik, y_ik, z_ik)))
         result_label.config(text=f"Sent coordinates: {x_ik:.2f}, {y_ik:.2f}, {z_ik:.2f} (shifted from {x}, {y}, {z})")
     except Exception as e:

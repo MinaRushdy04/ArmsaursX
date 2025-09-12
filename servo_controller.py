@@ -145,6 +145,20 @@ class RobustSerialServoController:
             print(f"Servo{servo}: {angle}°")
         print(f"Arduino: {'✅ Connected' if self.connected else '❌ Disconnected'}\n")
 
+# ---------------- Wrapper for main.py / ik.py ----------------
+def start_controller(angle_queue: multiprocessing.Queue):
+    """Wrapper for starting the servo controller in a separate process."""
+    port = select_serial_port(get_default_port())
+    controller = RobustSerialServoController(port, angle_queue=angle_queue)
+    controller.start()
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        logging.info("⏹️ Interrupted by user")
+    finally:
+        controller.stop()
+        logging.info("👋 Controller stopped")
 
 # ---------------- Run standalone for testing ----------------
 if __name__ == "__main__":

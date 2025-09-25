@@ -18,6 +18,7 @@ The goal is to showcase advanced **software-driven intelligence** on top of mode
   - 🎮 Manual joystick control  
   - 🎥 Camera-guided automatic control  
   - 🔗 Arduino integration (serial communication)  
+  - 📱 Mobile Application integrated with Firebase control
 
 - **Visualization**
   - 3D simulation of the arm with Matplotlib
@@ -35,4 +36,6 @@ The goal is to showcase advanced **software-driven intelligence** on top of mode
 ---
 
 ## 📂 Project Structure
+
+
 

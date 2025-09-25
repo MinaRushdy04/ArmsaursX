@@ -42,6 +42,9 @@ The goal is to showcase advanced **software-driven intelligence** on top of mode
 - **Kotlin** - Primary programming language for real-time performance
 - **Jetpack Compose** - Modern declarative UI framework
 - **MediaPipe** - Real-time hand gesture recognition
+### **Cloud & Real-Time Systems**
+- **Firebase Realtime Database** - Cross-platform data synchronization
+
 
 ---
 
